@@ -297,17 +297,107 @@
       line-height: 1.5;
     }
 
+    /* Mode tabs */
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      background: var(--bg);
+      padding: 0.25rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+    .tab {
+      border: none;
+      background: none;
+      color: var(--text-dim);
+      padding: 0.35rem 1.1rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    .tab.active { background: var(--accent); color: #fff; }
+    body[data-mode="explore"] .ch,
+    body[data-mode="challenge"] .ex { display: none; }
+
+    /* Challenge */
+    .btn-main {
+      width: 100%;
+      padding: 0.65rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-main:hover { opacity: 0.85; }
+    .btn-sub {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .ch-note { font-size: 0.82rem; color: var(--text-dim); line-height: 1.6; margin-bottom: 0.75rem; }
+    .ch-top { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); }
+    .ch-top b { color: var(--warn); font-size: 1rem; }
+    .ch-find { margin-top: 1rem; font-size: 0.8rem; color: var(--text-dim); }
+    .ch-word { font-size: 2.2rem; font-weight: 700; color: var(--accent2); line-height: 1.1; }
+    .ch-hint { min-height: 1.4em; color: var(--text-dim); margin-top: 0.25rem; }
+    .ch-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-top: 1rem; }
+    #ch-time-bar { height: 100%; width: 100%; background: var(--success); transition: width 1s linear; }
+    #ch-time-bar.low { background: #ef4444; }
+    .ch-left { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.3rem; text-align: right; }
+    .ch-btns { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
+    .ch-btns .btn-sub { flex: 1; }
+    .ch-final { font-size: 3rem; font-weight: 700; color: var(--warn); text-align: center; margin: 0.5rem 0; }
+    #ch-best-msg { text-align: center; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.75rem; }
+    #ch-log { list-style: none; display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+    #ch-log li { display: flex; justify-content: space-between; background: var(--bg); border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.82rem; }
+    #ch-log .ok { color: var(--success); }
+    #ch-log .miss { color: var(--text-dim); }
+
+    #flash {
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      padding: 0.75rem 1.75rem;
+      border-radius: 12px;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(34, 197, 94, 0.9);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 8;
+      text-align: center;
+    }
+    #flash.miss { background: rgba(100, 116, 139, 0.9); }
+    #flash.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    #flash small { display: block; font-size: 0.9rem; font-weight: 400; }
+
     @media (max-width: 700px) {
+      header { flex-wrap: wrap; gap: 0.5rem; }
       main { grid-template-columns: 1fr; }
       .panel { flex-direction: row; flex-wrap: wrap; }
       .card { flex: 1 1 200px; }
     }
   </style>
 </head>
-<body>
+<body data-mode="explore">
 
 <header>
   <h1>實境單字卡</h1>
+  <nav class="tabs" aria-label="模式">
+    <button class="tab active" data-mode="explore">探索</button>
+    <button class="tab" data-mode="challenge">挑戰</button>
+  </nav>
   <span id="status-badge">載入中…</span>
 </header>
 
@@ -329,11 +419,52 @@
       <strong>點這裡開啟鏡頭</strong>
       <span>對準身邊的東西，看看它叫什麼</span>
     </button>
+
+    <div id="flash" aria-live="assertive"></div>
   </div>
 
   <aside class="panel" role="complementary" aria-label="偵測資訊面板">
 
-    <div class="card">
+    <div class="card ch">
+      <div id="ch-intro">
+        <h2>挑戰模式</h2>
+        <p class="ch-note">
+          出一個英文單字，30 秒內用鏡頭找到它<br>
+          一輪 5 題，越快找到分數越高<br>
+          剩 20 秒會出中文提示
+        </p>
+        <p class="ch-note">最高分：<span id="ch-best">0</span></p>
+        <button class="btn-main" id="ch-start">開始挑戰</button>
+      </div>
+
+      <div id="ch-play" hidden>
+        <div class="ch-top">
+          <span>第 <span id="ch-q">1</span> / 5 題</span>
+          <span>分數 <b id="ch-score">0</b></span>
+        </div>
+        <div class="ch-find" id="ch-find">Find a</div>
+        <div class="ch-word" id="ch-word"></div>
+        <div class="ch-hint" id="ch-hint"></div>
+        <div class="ch-bar"><div id="ch-time-bar"></div></div>
+        <div class="ch-left"><span id="ch-left">30</span> 秒</div>
+        <div class="ch-btns">
+          <button class="speak-btn" id="ch-speak" aria-label="念題目">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+          </button>
+          <button class="btn-sub" id="ch-skip">跳過</button>
+        </div>
+      </div>
+
+      <div id="ch-end" hidden>
+        <h2>挑戰結束</h2>
+        <div class="ch-final" id="ch-final">0</div>
+        <p id="ch-best-msg"></p>
+        <ul id="ch-log"></ul>
+        <button class="btn-main" id="ch-again">再玩一次</button>
+      </div>
+    </div>
+
+    <div class="card ex">
       <h2>單字卡</h2>
       <p id="wc-empty">點畫面上的框或下面的單字</p>
       <div id="wc-body" hidden>
@@ -347,7 +478,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card ex">
       <h2>即時統計</h2>
       <div class="stats-grid">
         <div class="stat">
@@ -361,7 +492,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card ex">
       <h2>看到的單字</h2>
       <ul id="detect-list" aria-live="polite" aria-label="偵測物件列表">
         <li style="color: var(--text-dim); font-size: 0.82rem;">等待偵測…</li>
@@ -378,7 +509,7 @@
       <input type="range" id="threshold" min="10" max="90" value="50" aria-label="信心門檻">
     </div>
 
-    <div class="card">
+    <div class="card ex">
       <h2>關於模型</h2>
       <p class="model-note">
         使用 <strong>COCO-SSD</strong> 預訓練模型，可辨識 80 種日常物體。<br><br>
@@ -530,9 +661,9 @@
     }
   });
 
-  startScr.addEventListener('click', startCamera);
+  startScr.addEventListener('click', function () { startCamera(); });
 
-  function startCamera() {
+  function startCamera(onReady) {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
       .then(function (stream) {
         video.srcObject = stream;
@@ -546,6 +677,7 @@
           badge.textContent = '偵測中';
           badge.className = 'ready';
           requestAnimationFrame(detectLoop);
+          if (onReady) onReady();
         };
       })
       .catch(function (err) {
@@ -569,7 +701,170 @@
     statFps.textContent = '—';
     statCount.textContent = '0';
     listEl.innerHTML = '<li style="color:var(--text-dim);font-size:.82rem">等待偵測…</li>';
+    quitGame();
   }
+
+  // ── Mode tabs ──
+  var mode = 'explore';
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      mode = t.dataset.mode;
+      document.body.dataset.mode = mode;
+      document.querySelectorAll('.tab').forEach(function (b) {
+        b.classList.toggle('active', b === t);
+      });
+      if (mode !== 'challenge') quitGame();
+    });
+  });
+
+  // ── Challenge ──
+  // common indoor things only, no elephants
+  var POOL = [
+    'cup', 'bottle', 'cell phone', 'book', 'chair', 'laptop', 'keyboard',
+    'mouse', 'remote', 'scissors', 'clock', 'backpack', 'umbrella',
+    'toothbrush', 'spoon', 'bowl', 'banana', 'apple', 'potted plant', 'teddy bear'
+  ];
+  var ROUND = 5, TIME = 30, HINT_AT = 20;
+
+  var chIntro = document.getElementById('ch-intro');
+  var chPlay  = document.getElementById('ch-play');
+  var chEnd   = document.getElementById('ch-end');
+  var chWord  = document.getElementById('ch-word');
+  var chHint  = document.getElementById('ch-hint');
+  var chFind  = document.getElementById('ch-find');
+  var chLeft  = document.getElementById('ch-left');
+  var chBar   = document.getElementById('ch-time-bar');
+  var chScore = document.getElementById('ch-score');
+  var chQ     = document.getElementById('ch-q');
+  var flash   = document.getElementById('flash');
+
+  var game = null;
+
+  function getBest() {
+    try { return parseInt(localStorage.getItem('vocabcam-best'), 10) || 0; } catch (e) { return 0; }
+  }
+  function setBest(v) {
+    try { localStorage.setItem('vocabcam-best', v); } catch (e) {}
+  }
+  document.getElementById('ch-best').textContent = getBest();
+
+  function shuffle(a) {
+    a = a.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function showPanel(el) {
+    [chIntro, chPlay, chEnd].forEach(function (p) { p.hidden = p !== el; });
+  }
+
+  function startGame() {
+    if (!model) return;
+    if (!running) return startCamera(startGame);
+    game = { qs: shuffle(POOL).slice(0, ROUND), i: 0, score: 0, log: [] };
+    showPanel(chPlay);
+    nextQuestion();
+  }
+
+  function nextQuestion() {
+    if (game.i >= ROUND) return endGame();
+    var w = game.qs[game.i];
+    game.left = TIME;
+    game.hits = 0;
+    game.busy = false;
+    chQ.textContent = game.i + 1;
+    chScore.textContent = game.score;
+    chFind.textContent = /^[aeiou]/.test(w) ? 'Find an' : 'Find a';
+    chWord.textContent = w;
+    chHint.textContent = '';
+    renderTime();
+    speak(w);
+    clearInterval(game.timer);
+    game.timer = setInterval(tick, 1000);
+  }
+
+  function tick() {
+    if (!game || game.busy) return;
+    game.left--;
+    renderTime();
+    if (game.left <= 0) finishQuestion(false, "Time's up");
+  }
+
+  function renderTime() {
+    var w = game.qs[game.i];
+    chLeft.textContent = game.left;
+    chBar.style.width = (game.left / TIME * 100) + '%';
+    chBar.classList.toggle('low', game.left <= 10);
+    if (game.left <= HINT_AT) chHint.textContent = '提示：' + (ZH[w] || '');
+  }
+
+  function finishQuestion(found, msg) {
+    var w = game.qs[game.i];
+    var pts = found ? 10 + game.left : 0;
+    game.busy = true;
+    game.score += pts;
+    game.log.push({ w: w, pts: pts, found: found });
+    chScore.textContent = game.score;
+    clearInterval(game.timer);
+
+    flash.className = found ? '' : 'miss';
+    flash.innerHTML = msg + (found ? ' +' + pts : '') + '<small>' + w + '  ' + (ZH[w] || '') + '</small>';
+    flash.classList.add('show');
+    if (found) speak(w);
+
+    setTimeout(function () {
+      flash.classList.remove('show');
+      if (!game) return;
+      game.i++;
+      nextQuestion();
+    }, 1600);
+  }
+
+  function endGame() {
+    var best = getBest();
+    var isNew = game.score > best;
+    if (isNew) setBest(game.score);
+    document.getElementById('ch-best').textContent = Math.max(best, game.score);
+    document.getElementById('ch-final').textContent = game.score;
+    document.getElementById('ch-best-msg').textContent = isNew ? '新紀錄！' : '最高分 ' + best;
+    document.getElementById('ch-log').innerHTML = game.log.map(function (r) {
+      return '<li><span>' + r.w + ' <span class="det-zh">' + (ZH[r.w] || '') + '</span></span>' +
+        '<span class="' + (r.found ? 'ok' : 'miss') + '">' + (r.found ? '+' + r.pts : 'miss') + '</span></li>';
+    }).join('');
+    game = null;
+    showPanel(chEnd);
+  }
+
+  function quitGame() {
+    if (!game) return;
+    clearInterval(game.timer);
+    game = null;
+    flash.classList.remove('show');
+    showPanel(chIntro);
+  }
+
+  // target must show up in 2 frames in a row, so a flicker doesn't count
+  function checkGame(preds) {
+    if (!game || game.busy) return;
+    var w = game.qs[game.i];
+    if (preds.some(function (p) { return p.class === w; })) {
+      if (++game.hits >= 2) finishQuestion(true, 'Found!');
+    } else {
+      game.hits = 0;
+    }
+  }
+
+  document.getElementById('ch-start').addEventListener('click', startGame);
+  document.getElementById('ch-again').addEventListener('click', startGame);
+  document.getElementById('ch-skip').addEventListener('click', function () {
+    if (game && !game.busy) finishQuestion(false, 'Skip');
+  });
+  document.getElementById('ch-speak').addEventListener('click', function () {
+    if (game) speak(game.qs[game.i]);
+  });
 
   // ── Detection loop ──
   var detecting = false;
@@ -597,6 +892,7 @@
       lastPreds = preds;
       drawResults(preds);
       updateList(preds);
+      checkGame(preds);
     }).catch(function () {
       detecting = false;
     });
@@ -605,15 +901,17 @@
   // ── Draw bounding boxes ──
   function drawResults(preds) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var target = game ? game.qs[game.i] : null;
 
     preds.forEach(function (p) {
       var x = p.bbox[0], y = p.bbox[1], w = p.bbox[2], h = p.bbox[3];
-      var color = colorFor(p.class);
+      var isTarget = p.class === target;
+      var color = isTarget ? '#22c55e' : colorFor(p.class);
       var label = p.class + '  ' + (ZH[p.class] || '');
       var fontSize = Math.max(14, Math.round(canvas.width / 40));
 
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = isTarget ? 6 : 2.5;
       ctx.strokeRect(x, y, w, h);
 
       ctx.font = 'bold ' + fontSize + 'px "Segoe UI", sans-serif';
