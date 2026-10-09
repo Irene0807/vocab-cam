@@ -87,8 +87,28 @@
       position: absolute;
       top: 0; left: 0;
       width: 100%; height: 100%;
+      object-fit: cover;
       pointer-events: none;
     }
+    .video-wrap.live { cursor: pointer; }
+
+    /* Word card */
+    #wc-empty { color: var(--text-dim); font-size: 0.82rem; }
+    #wc-body[hidden] { display: none; }
+    #wc-body { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .wc-en { font-size: 1.8rem; font-weight: 700; color: var(--accent2); line-height: 1.1; }
+    .wc-zh { color: var(--text-dim); margin-top: 0.25rem; }
+    .speak-btn {
+      flex-shrink: 0;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--accent2);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .speak-btn:hover { border-color: var(--accent2); }
 
     #loading-screen {
       position: absolute;
@@ -212,8 +232,11 @@
       padding: 0.4rem 0.6rem;
       font-size: 0.82rem;
     }
+    #detect-list li[data-cls] { cursor: pointer; }
+    #detect-list li[data-cls]:hover { outline: 1px solid var(--border); }
 
     .det-name { font-weight: 600; }
+    .det-zh { color: var(--text-dim); font-size: 0.75rem; margin-left: 0.3rem; }
 
     .det-bar-wrap {
       flex: 1;
@@ -311,6 +334,20 @@
   <aside class="panel" role="complementary" aria-label="偵測資訊面板">
 
     <div class="card">
+      <h2>單字卡</h2>
+      <p id="wc-empty">點畫面上的框或下面的單字</p>
+      <div id="wc-body" hidden>
+        <div>
+          <div class="wc-en" id="wc-en"></div>
+          <div class="wc-zh" id="wc-zh"></div>
+        </div>
+        <button class="speak-btn" id="wc-speak" aria-label="再念一次">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>即時統計</h2>
       <div class="stats-grid">
         <div class="stat">
@@ -325,7 +362,7 @@
     </div>
 
     <div class="card">
-      <h2>偵測結果</h2>
+      <h2>看到的單字</h2>
       <ul id="detect-list" aria-live="polite" aria-label="偵測物件列表">
         <li style="color: var(--text-dim); font-size: 0.82rem;">等待偵測…</li>
       </ul>
@@ -409,8 +446,61 @@
   const statCount = document.getElementById('stat-count');
   const slider    = document.getElementById('threshold');
   const sliderVal = document.getElementById('threshold-val');
+  const wrap      = document.querySelector('.video-wrap');
+  const wcEmpty   = document.getElementById('wc-empty');
+  const wcBody    = document.getElementById('wc-body');
+  const wcEn      = document.getElementById('wc-en');
+  const wcZh      = document.getElementById('wc-zh');
 
   let model    = null;
+  let lastPreds = [];
+
+  // ── Speak / word card ──
+  function speak(word) {
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(word);
+    u.lang = 'en-US';
+    u.rate = 0.9;
+    speechSynthesis.speak(u);
+  }
+
+  function showWord(cls) {
+    wcEn.textContent = cls;
+    wcZh.textContent = ZH[cls] || '';
+    wcEmpty.hidden = true;
+    wcBody.hidden = false;
+    speak(cls);
+  }
+
+  document.getElementById('wc-speak').addEventListener('click', function () {
+    speak(wcEn.textContent);
+  });
+
+  // list is re-rendered every frame, so listen on the parent with pointerdown
+  listEl.addEventListener('pointerdown', function (e) {
+    var li = e.target.closest('[data-cls]');
+    if (li) showWord(li.dataset.cls);
+  });
+
+  // click on a box: map screen point -> video pixel (object-fit: cover)
+  wrap.addEventListener('pointerdown', function (e) {
+    if (!running || startScr.contains(e.target)) return;
+    var r = wrap.getBoundingClientRect();
+    var vw = canvas.width, vh = canvas.height;
+    var s = Math.max(r.width / vw, r.height / vh);
+    var x = (e.clientX - r.left - (r.width - vw * s) / 2) / s;
+    var y = (e.clientY - r.top - (r.height - vh * s) / 2) / s;
+
+    var hit = null;
+    lastPreds.forEach(function (p) {
+      var b = p.bbox;
+      if (x >= b[0] && x <= b[0] + b[2] && y >= b[1] && y <= b[1] + b[3]) {
+        if (!hit || b[2] * b[3] < hit.bbox[2] * hit.bbox[3]) hit = p;
+      }
+    });
+    if (hit) showWord(hit.class);
+  });
   let running  = false;
   let lastTs   = 0;
 
@@ -451,6 +541,7 @@
           canvas.height = video.videoHeight;
           running = true;
           startScr.classList.remove('show');
+          wrap.classList.add('live');
           btnCam.textContent = '關閉攝影機';
           badge.textContent = '偵測中';
           badge.className = 'ready';
@@ -470,6 +561,8 @@
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     startScr.classList.add('show');
+    wrap.classList.remove('live');
+    lastPreds = [];
     btnCam.textContent = '開啟攝影機';
     badge.textContent = '已暫停';
     badge.className = '';
@@ -500,6 +593,8 @@
 
     model.detect(video, undefined, threshold).then(function (preds) {
       detecting = false;
+      if (!running) return;
+      lastPreds = preds;
       drawResults(preds);
       updateList(preds);
     }).catch(function () {
@@ -514,7 +609,7 @@
     preds.forEach(function (p) {
       var x = p.bbox[0], y = p.bbox[1], w = p.bbox[2], h = p.bbox[3];
       var color = colorFor(p.class);
-      var label = (ZH[p.class] || p.class) + ' ' + Math.round(p.score * 100) + '%';
+      var label = p.class + '  ' + (ZH[p.class] || '');
       var fontSize = Math.max(14, Math.round(canvas.width / 40));
 
       ctx.strokeStyle = color;
@@ -542,12 +637,22 @@
       return;
     }
 
-    var sorted = preds.slice().sort(function (a, b) { return b.score - a.score; });
-    listEl.innerHTML = sorted.map(function (p) {
-      var pct = Math.round(p.score * 100);
-      var color = colorFor(p.class);
-      return '<li>' +
-        '<span class="det-name" style="color:' + color + '">' + (ZH[p.class] || p.class) + '</span>' +
+    // same class -> one row (person x2)
+    var groups = {};
+    preds.forEach(function (p) {
+      var g = groups[p.class] || (groups[p.class] = { cls: p.class, n: 0, score: 0 });
+      g.n++;
+      g.score = Math.max(g.score, p.score);
+    });
+
+    var sorted = Object.keys(groups).map(function (k) { return groups[k]; })
+      .sort(function (a, b) { return b.score - a.score; });
+    listEl.innerHTML = sorted.map(function (g) {
+      var pct = Math.round(g.score * 100);
+      var color = colorFor(g.cls);
+      return '<li data-cls="' + g.cls + '">' +
+        '<span><span class="det-name" style="color:' + color + '">' + g.cls + (g.n > 1 ? ' x' + g.n : '') + '</span>' +
+        '<span class="det-zh">' + (ZH[g.cls] || '') + '</span></span>' +
         '<div class="det-bar-wrap"><div class="det-bar" style="width:' + pct + '%;background:' + color + '"></div></div>' +
         '<span class="det-score">' + pct + '%</span>' +
         '</li>';
