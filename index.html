@@ -262,20 +262,22 @@
     }
 
     /* Controls */
-    #btn-camera {
-      width: 100%;
-      padding: 0.65rem;
-      border-radius: 8px;
-      border: none;
-      background: var(--accent);
-      color: #fff;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
+    #btn-camera { width: 100%; margin-top: 0.75rem; }
+    .stat-note { font-size: 0.65rem; color: var(--text-dim); opacity: 0.7; margin-top: 0.15rem; }
+    #tap-hint {
+      position: absolute;
+      left: 50%; bottom: 0.75rem;
+      transform: translateX(-50%);
+      background: rgba(10, 14, 26, 0.8);
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      pointer-events: none;
+      z-index: 7;
     }
-    #btn-camera:hover { opacity: 0.85; }
-    #btn-camera:disabled { opacity: 0.4; cursor: not-allowed; }
+    #tap-hint[hidden] { display: none; }
+    .wc-tag { font-size: 0.7rem; color: var(--text-dim); margin-left: 0.4rem; font-weight: 400; text-transform: none; letter-spacing: 0; }
 
     label[for="threshold"] {
       font-size: 0.82rem;
@@ -334,7 +336,8 @@
     }
     .btn-main:hover { opacity: 0.85; }
     .btn-sub {
-      padding: 0.5rem 1rem;
+      padding: 0.5rem 0.75rem;
+      white-space: nowrap;
       border-radius: 8px;
       border: 1px solid var(--border);
       background: var(--bg);
@@ -387,6 +390,8 @@
       main { grid-template-columns: 1fr; }
       .panel { flex-direction: row; flex-wrap: wrap; }
       .card { flex: 1 1 200px; }
+      .card.wide { flex-basis: 100%; }
+      .video-wrap { max-height: none; }
     }
   </style>
 </head>
@@ -398,7 +403,7 @@
     <button class="tab active" data-mode="explore">探索</button>
     <button class="tab" data-mode="challenge">挑戰</button>
   </nav>
-  <span id="status-badge">載入中…</span>
+  <span id="status-badge" title="AI 模型狀態">模型載入中…</span>
 </header>
 
 <main>
@@ -421,11 +426,12 @@
     </button>
 
     <div id="flash" aria-live="assertive"></div>
+    <div id="tap-hint" hidden>點框框聽發音</div>
   </div>
 
   <aside class="panel" role="complementary" aria-label="偵測資訊面板">
 
-    <div class="card ch">
+    <div class="card ch wide">
       <div id="ch-intro">
         <h2>挑戰模式</h2>
         <p class="ch-note">
@@ -467,9 +473,9 @@
       </div>
     </div>
 
-    <div class="card ex">
-      <h2>單字卡</h2>
-      <p id="wc-empty">點畫面上的框或下面的單字</p>
+    <div class="card ex wide">
+      <h2>單字卡<span class="wc-tag" id="wc-tag"></span></h2>
+      <p id="wc-empty">開鏡頭對準東西，單字就會出現在這裡</p>
       <div id="wc-body" hidden>
         <div>
           <div class="wc-en" id="wc-en"></div>
@@ -487,10 +493,12 @@
         <div class="stat">
           <div class="stat-value" id="stat-fps">—</div>
           <div class="stat-label">FPS</div>
+          <div class="stat-note">每秒偵測幾次</div>
         </div>
         <div class="stat">
           <div class="stat-value" id="stat-count">0</div>
           <div class="stat-label">偵測到物件</div>
+          <div class="stat-note">畫面裡認出幾樣</div>
         </div>
       </div>
     </div>
@@ -503,20 +511,20 @@
     </div>
 
     <div class="card">
-      <h2>控制</h2>
-      <button id="btn-camera" disabled aria-label="開啟攝影機">開啟攝影機</button>
-      <br><br>
+      <h2>設定</h2>
       <label for="threshold">
         信心門檻：<span id="threshold-val">50%</span>
       </label>
       <input type="range" id="threshold" min="10" max="90" value="50" aria-label="信心門檻">
+      <p class="model-note" style="margin-top:0.4rem">AI 多確定才框出來。調高 = 比較準但框得少，調低 = 框得多但可能認錯</p>
+      <button class="btn-sub" id="btn-camera" hidden aria-label="關閉鏡頭">關閉鏡頭</button>
     </div>
 
     <div class="card ex">
       <h2>關於模型</h2>
       <p class="model-note">
-        使用 <strong>COCO-SSD</strong> 預訓練模型，可辨識 80 種日常物體。<br><br>
-        由 TensorFlow.js 在瀏覽器端直接推論，影像不會上傳伺服器。
+        使用 <strong>COCO-SSD</strong> 預訓練模型：一個已經看過大量照片的 AI，認得 80 種日常物品<br><br>
+        用 TensorFlow.js 直接在你的瀏覽器裡跑，畫面不會上傳到任何地方
       </p>
     </div>
 
@@ -585,6 +593,8 @@
   const wcBody    = document.getElementById('wc-body');
   const wcEn      = document.getElementById('wc-en');
   const wcZh      = document.getElementById('wc-zh');
+  const wcTag     = document.getElementById('wc-tag');
+  const tapHint   = document.getElementById('tap-hint');
 
   let model    = null;
   let lastPreds = [];
@@ -599,12 +609,41 @@
     speechSynthesis.speak(u);
   }
 
-  function showWord(cls) {
+  // auto = follow the most obvious thing on screen, no sound
+  // user click pins the card for 5s
+  var pinnedUntil = 0;
+  var autoCand = null, autoHits = 0;
+
+  function showWord(cls, auto) {
     wcEn.textContent = cls;
     wcZh.textContent = ZH[cls] || '';
+    wcTag.textContent = auto ? '畫面上最明顯的' : '你點的';
     wcEmpty.hidden = true;
     wcBody.hidden = false;
+    if (auto) return;
+    pinnedUntil = Date.now() + 5000;
     speak(cls);
+    hideTapHint(true);
+  }
+
+  // top class must stay on top for 3 frames, otherwise the card flickers
+  function autoWord(preds) {
+    if (mode !== 'explore' || Date.now() < pinnedUntil || !preds.length) return;
+    var top = preds.reduce(function (a, b) { return b.score > a.score ? b : a; }).class;
+    if (top === wcEn.textContent && wcTag.textContent) return;
+    if (top === autoCand) autoHits++; else { autoCand = top; autoHits = 1; }
+    if (autoHits >= 3) showWord(top, true);
+  }
+
+  function tapped() {
+    try { return localStorage.getItem('vocabcam-tapped') === '1'; } catch (e) { return false; }
+  }
+  function hideTapHint(save) {
+    tapHint.hidden = true;
+    if (save) try { localStorage.setItem('vocabcam-tapped', '1'); } catch (e) {}
+  }
+  function showTapHint() {
+    tapHint.hidden = !(running && mode === 'explore' && !tapped());
   }
 
   document.getElementById('wc-speak').addEventListener('click', function () {
@@ -642,9 +681,8 @@
   cocoSsd.load().then(function (m) {
     model = m;
     loading.style.display = 'none';
-    badge.textContent = '模型就緒';
+    badge.textContent = '模型就緒，可以開鏡頭';
     badge.className = 'ready';
-    btnCam.disabled = false;
     startScr.classList.add('show');
   }).catch(function (err) {
     loading.innerHTML = '<p style="color:#ef4444">模型載入失敗：' + err.message + '</p>';
@@ -656,13 +694,7 @@
   });
 
   // ── Camera button ──
-  btnCam.addEventListener('click', function () {
-    if (running) {
-      stopCamera();
-    } else {
-      startCamera();
-    }
-  });
+  btnCam.addEventListener('click', stopCamera);
 
   startScr.addEventListener('click', function () { startCamera(); });
 
@@ -676,15 +708,16 @@
           running = true;
           startScr.classList.remove('show');
           wrap.classList.add('live');
-          btnCam.textContent = '關閉攝影機';
+          btnCam.hidden = false;
           badge.textContent = '偵測中';
           badge.className = 'ready';
+          showTapHint();
           requestAnimationFrame(detectLoop);
           if (onReady) onReady();
         };
       })
       .catch(function (err) {
-        alert('無法存取攝影機：' + err.message);
+        alert('沒辦法開鏡頭，請在瀏覽器允許使用相機後再試一次\n(' + err.message + ')');
       });
   }
 
@@ -698,7 +731,8 @@
     startScr.classList.add('show');
     wrap.classList.remove('live');
     lastPreds = [];
-    btnCam.textContent = '開啟攝影機';
+    btnCam.hidden = true;
+    hideTapHint(false);
     badge.textContent = '已暫停';
     badge.className = '';
     statFps.textContent = '—';
@@ -717,6 +751,7 @@
         b.classList.toggle('active', b === t);
       });
       if (mode !== 'challenge') quitGame();
+      showTapHint();
     });
   });
 
@@ -937,6 +972,7 @@
       drawResults(preds);
       updateList(preds);
       if (mode === 'explore') recordSeen(preds);
+      autoWord(preds);
       checkGame(preds);
     }).catch(function () {
       detecting = false;
