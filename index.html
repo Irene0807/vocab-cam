@@ -60,9 +60,12 @@
     main {
       flex: 1;
       display: grid;
-      grid-template-columns: 1fr 260px;
+      grid-template-columns: minmax(0, 1fr) 280px;
       gap: 1rem;
       padding: 1rem;
+      width: 100%;
+      max-width: min(1200px, calc(75vh * 4 / 3 + 280px + 3rem));
+      margin: 0 auto;
     }
 
     /* ── Video area ── */
@@ -319,6 +322,8 @@
       font-size: 0.85rem;
     }
     .tab.active { background: var(--accent); color: #fff; }
+    .head-right { display: flex; align-items: center; gap: 0.6rem; }
+    .lang .tab { padding: 0.3rem 0.7rem; }
     body[data-mode="explore"] .ch,
     body[data-mode="challenge"] .ex,
     body[data-mode="book"] .ex,
@@ -422,7 +427,7 @@
 
     @media (max-width: 700px) {
       header { flex-wrap: wrap; gap: 0.5rem; }
-      main { grid-template-columns: 1fr; }
+      main { grid-template-columns: 1fr; max-width: none; }
       .panel { flex-direction: row; flex-wrap: wrap; }
       .card { flex: 1 1 200px; }
       .card.wide { flex-basis: 100%; }
@@ -439,7 +444,13 @@
     <button class="tab" data-mode="challenge">挑戰</button>
     <button class="tab" data-mode="book">單字本</button>
   </nav>
-  <span id="status-badge" title="AI 模型狀態">模型載入中…</span>
+  <div class="head-right">
+    <nav class="tabs lang" aria-label="語言">
+      <button class="tab active" data-lang="en">EN</button>
+      <button class="tab" data-lang="ko">한국어</button>
+    </nav>
+    <span id="status-badge" title="AI 模型狀態">模型載入中…</span>
+  </div>
 </header>
 
 <main>
@@ -606,6 +617,35 @@
     toothbrush:'牙刷'
   };
 
+  const KO = {
+    person:'사람', bicycle:'자전거', car:'자동차', motorcycle:'오토바이',
+    airplane:'비행기', bus:'버스', train:'기차', truck:'트럭', boat:'배',
+    'traffic light':'신호등', 'fire hydrant':'소화전', 'stop sign':'정지 표지판',
+    'parking meter':'주차 미터기', bench:'벤치', bird:'새', cat:'고양이', dog:'개',
+    horse:'말', sheep:'양', cow:'소', elephant:'코끼리', bear:'곰', zebra:'얼룩말',
+    giraffe:'기린', backpack:'배낭', umbrella:'우산', handbag:'핸드백',
+    tie:'넥타이', suitcase:'여행 가방', frisbee:'프리스비', skis:'스키',
+    snowboard:'스노보드', 'sports ball':'공', kite:'연', 'baseball bat':'야구 방망이',
+    'baseball glove':'야구 글러브', skateboard:'스케이트보드', surfboard:'서핑보드',
+    'tennis racket':'테니스 라켓', bottle:'병', 'wine glass':'와인잔', cup:'컵',
+    fork:'포크', knife:'칼', spoon:'숟가락', bowl:'그릇', banana:'바나나',
+    apple:'사과', sandwich:'샌드위치', orange:'오렌지', broccoli:'브로콜리',
+    carrot:'당근', 'hot dog':'핫도그', pizza:'피자', donut:'도넛',
+    cake:'케이크', chair:'의자', couch:'소파', 'potted plant':'화분', bed:'침대',
+    'dining table':'식탁', toilet:'변기', tv:'텔레비전', laptop:'노트북',
+    mouse:'마우스', remote:'리모컨', keyboard:'키보드', 'cell phone':'휴대폰',
+    microwave:'전자레인지', oven:'오븐', toaster:'토스터', sink:'싱크대',
+    refrigerator:'냉장고', book:'책', clock:'시계', vase:'꽃병',
+    scissors:'가위', 'teddy bear':'곰인형', 'hair drier':'헤어드라이어',
+    toothbrush:'칫솔'
+  };
+
+  // ── Language ──
+  // storage keys stay English (class name), only display / speech changes
+  var lang = 'en';
+  try { lang = localStorage.getItem('vocabcam-lang') || 'en'; } catch (e) {}
+  function word(cls) { return lang === 'ko' ? (KO[cls] || cls) : cls; }
+
   // ── Class colors (consistent per class) ──
   const CLASS_COLORS = {};
   const PALETTE = [
@@ -645,11 +685,11 @@
   let lastPreds = [];
 
   // ── Speak / word card ──
-  function speak(word) {
+  function speak(cls) {
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
-    var u = new SpeechSynthesisUtterance(word);
-    u.lang = 'en-US';
+    var u = new SpeechSynthesisUtterance(word(cls));
+    u.lang = lang === 'ko' ? 'ko-KR' : 'en-US';
     u.rate = 0.9;
     speechSynthesis.speak(u);
   }
@@ -657,10 +697,12 @@
   // auto = follow the most obvious thing on screen, no sound
   // user click pins the card for 5s
   var pinnedUntil = 0;
+  var cardCls = '';
   var autoCand = null, autoHits = 0;
 
   function showWord(cls, auto) {
-    wcEn.textContent = cls;
+    cardCls = cls;
+    wcEn.textContent = word(cls);
     wcZh.textContent = ZH[cls] || '';
     wcTag.textContent = auto ? '畫面上最明顯的' : '你點的';
     wcEmpty.hidden = true;
@@ -675,7 +717,7 @@
   function autoWord(preds) {
     if (mode !== 'explore' || Date.now() < pinnedUntil || !preds.length) return;
     var top = preds.reduce(function (a, b) { return b.score > a.score ? b : a; }).class;
-    if (top === wcEn.textContent && wcTag.textContent) return;
+    if (top === cardCls && wcTag.textContent) return;
     if (top === autoCand) autoHits++; else { autoCand = top; autoHits = 1; }
     if (autoHits >= 3) showWord(top, true);
   }
@@ -692,7 +734,7 @@
   }
 
   document.getElementById('wc-speak').addEventListener('click', function () {
-    speak(wcEn.textContent);
+    if (cardCls) speak(cardCls);
   });
 
   // list is re-rendered every frame, so listen on the parent with pointerdown
@@ -788,11 +830,11 @@
 
   // ── Mode tabs ──
   var mode = 'explore';
-  document.querySelectorAll('.tab').forEach(function (t) {
+  document.querySelectorAll('.tab[data-mode]').forEach(function (t) {
     t.addEventListener('click', function () {
       mode = t.dataset.mode;
       document.body.dataset.mode = mode;
-      document.querySelectorAll('.tab').forEach(function (b) {
+      document.querySelectorAll('.tab[data-mode]').forEach(function (b) {
         b.classList.toggle('active', b === t);
       });
       if (mode !== 'challenge') quitGame();
@@ -841,7 +883,7 @@
   var newWord = document.getElementById('new-word');
   var newTimer;
   function toastNew(w) {
-    newWord.textContent = '收進單字本：' + w + ' ' + (ZH[w] || '');
+    newWord.textContent = '收進單字本：' + word(w) + ' ' + (ZH[w] || '');
     newWord.classList.add('show');
     clearTimeout(newTimer);
     newTimer = setTimeout(function () { newWord.classList.remove('show'); }, 1800);
@@ -868,8 +910,8 @@
     document.getElementById('bk-empty').hidden = words.length > 0;
     bkList.innerHTML = words.map(function (w) {
       return '<li>' +
-        '<button class="speak-btn" data-say="' + w + '" aria-label="念 ' + w + '">' + SPEAKER + '</button>' +
-        '<div class="bk-word"><div class="bk-en">' + w + '</div><div class="bk-zh">' + (ZH[w] || '') + '</div></div>' +
+        '<button class="speak-btn" data-say="' + w + '" aria-label="念 ' + word(w) + '">' + SPEAKER + '</button>' +
+        '<div class="bk-word"><div class="bk-en">' + word(w) + '</div><div class="bk-zh">' + (ZH[w] || '') + '</div></div>' +
         (found[w] ? '<span class="bk-star">挑戰找到 ' + found[w] + ' 次</span>' : '') +
         '<button class="bk-del" data-del="' + w + '" aria-label="刪除 ' + w + '">' + TRASH + '</button>' +
         '</li>';
@@ -954,13 +996,18 @@
     game.busy = false;
     chQ.textContent = game.i + 1;
     chScore.textContent = game.score;
-    chFind.textContent = /^[aeiou]/.test(w) ? 'Find an' : 'Find a';
-    chWord.textContent = w;
+    renderTarget();
     chHint.textContent = '';
     renderTime();
     speak(w);
     clearInterval(game.timer);
     game.timer = setInterval(tick, 1000);
+  }
+
+  function renderTarget() {
+    var w = game.qs[game.i];
+    chFind.textContent = lang === 'ko' ? '찾아보세요' : (/^[aeiou]/.test(w) ? 'Find an' : 'Find a');
+    chWord.textContent = word(w);
   }
 
   function tick() {
@@ -989,7 +1036,7 @@
     clearInterval(game.timer);
 
     flash.className = found ? '' : 'miss';
-    flash.innerHTML = msg + (found ? ' +' + pts : '') + '<small>' + w + '  ' + (ZH[w] || '') + '</small>';
+    flash.innerHTML = msg + (found ? ' +' + pts : '') + '<small>' + word(w) + '  ' + (ZH[w] || '') + '</small>';
     flash.classList.add('show');
     if (found) speak(w);
 
@@ -1009,7 +1056,7 @@
     document.getElementById('ch-final').textContent = game.score;
     document.getElementById('ch-best-msg').textContent = isNew ? '新紀錄！' : '最高分 ' + best;
     document.getElementById('ch-log').innerHTML = game.log.map(function (r) {
-      return '<li><span>' + r.w + ' <span class="det-zh">' + (ZH[r.w] || '') + '</span></span>' +
+      return '<li><span>' + word(r.w) + ' <span class="det-zh">' + (ZH[r.w] || '') + '</span></span>' +
         '<span class="' + (r.found ? 'ok' : 'miss') + '">' + (r.found ? '+' + r.pts : 'miss') + '</span></li>';
     }).join('');
     game = null;
@@ -1052,6 +1099,22 @@
   document.getElementById('ch-speak').addEventListener('click', function () {
     if (game) speak(game.qs[game.i]);
   });
+
+  // ── Language switch ──
+  function setLang(l) {
+    lang = l;
+    try { localStorage.setItem('vocabcam-lang', l); } catch (e) {}
+    document.querySelectorAll('[data-lang]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.lang === l);
+    });
+    if (cardCls) wcEn.textContent = word(cardCls);
+    if (game) renderTarget();
+    renderBook();
+  }
+  document.querySelectorAll('[data-lang]').forEach(function (b) {
+    b.addEventListener('click', function () { setLang(b.dataset.lang); });
+  });
+  setLang(lang);
 
   // ── Detection loop ──
   var detecting = false;
@@ -1096,7 +1159,7 @@
       var x = p.bbox[0], y = p.bbox[1], w = p.bbox[2], h = p.bbox[3];
       var isTarget = p.class === target;
       var color = isTarget ? '#22c55e' : colorFor(p.class);
-      var label = p.class + '  ' + (ZH[p.class] || '');
+      var label = word(p.class) + '  ' + (ZH[p.class] || '');
       var fontSize = Math.max(14, Math.round(canvas.width / 40));
 
       ctx.strokeStyle = color;
@@ -1138,7 +1201,7 @@
       var pct = Math.round(g.score * 100);
       var color = colorFor(g.cls);
       return '<li data-cls="' + g.cls + '">' +
-        '<span><span class="det-name" style="color:' + color + '">' + g.cls + (g.n > 1 ? ' x' + g.n : '') + '</span>' +
+        '<span><span class="det-name" style="color:' + color + '">' + word(g.cls) + (g.n > 1 ? ' x' + g.n : '') + '</span>' +
         '<span class="det-zh">' + (ZH[g.cls] || '') + '</span></span>' +
         '<div class="det-bar-wrap"><div class="det-bar" style="width:' + pct + '%;background:' + color + '"></div></div>' +
         '<span class="det-score">' + pct + '%</span>' +
