@@ -429,9 +429,11 @@
       <div id="ch-intro">
         <h2>挑戰模式</h2>
         <p class="ch-note">
-          出一個英文單字，30 秒內用鏡頭找到它<br>
-          一輪 5 題，越快找到分數越高<br>
-          剩 20 秒會出中文提示
+          用鏡頭找出題目上的東西<br>
+          一輪 5 題，越快分數越高
+        </p>
+        <p class="ch-note" id="ch-tip">
+          題目會從你探索過的東西出，<a href="#" id="ch-go-explore">先去探索</a>
         </p>
         <p class="ch-note">最高分：<span id="ch-best">0</span></p>
         <button class="btn-main" id="ch-start">開始挑戰</button>
@@ -446,11 +448,12 @@
         <div class="ch-word" id="ch-word"></div>
         <div class="ch-hint" id="ch-hint"></div>
         <div class="ch-bar"><div id="ch-time-bar"></div></div>
-        <div class="ch-left"><span id="ch-left">30</span> 秒</div>
+        <div class="ch-left"><span id="ch-left">45</span> 秒</div>
         <div class="ch-btns">
           <button class="speak-btn" id="ch-speak" aria-label="念題目">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
           </button>
+          <button class="btn-sub" id="ch-swap">換一題 (<span id="ch-swaps">3</span>)</button>
           <button class="btn-sub" id="ch-skip">跳過</button>
         </div>
       </div>
@@ -718,13 +721,44 @@
   });
 
   // ── Challenge ──
-  // common indoor things only, no elephants
-  var POOL = [
-    'cup', 'bottle', 'cell phone', 'book', 'chair', 'laptop', 'keyboard',
-    'mouse', 'remote', 'scissors', 'clock', 'backpack', 'umbrella',
-    'toothbrush', 'spoon', 'bowl', 'banana', 'apple', 'potted plant', 'teddy bear'
+  // things almost everyone has nearby, used when seen words aren't enough
+  var COMMON = [
+    'person', 'cell phone', 'cup', 'bottle', 'book',
+    'laptop', 'keyboard', 'mouse', 'chair', 'backpack'
   ];
-  var ROUND = 5, TIME = 30, HINT_AT = 20;
+  var ROUND = 5, TIME = 45, HINT_AT = 30, SWAPS = 3;
+
+  // words seen in explore mode
+  var seen = {};
+  try { seen = JSON.parse(localStorage.getItem('vocabcam-seen')) || {}; } catch (e) {}
+  var chTip  = document.getElementById('ch-tip');
+  function renderSeen() {
+    chTip.hidden = Object.keys(seen).length >= ROUND;
+  }
+  renderSeen();
+
+  document.getElementById('ch-go-explore').addEventListener('click', function (e) {
+    e.preventDefault();
+    document.querySelector('.tab[data-mode="explore"]').click();
+  });
+
+  function recordSeen(preds) {
+    var added = false;
+    preds.forEach(function (p) {
+      if (!seen[p.class]) { seen[p.class] = Date.now(); added = true; }
+    });
+    if (!added) return;
+    try { localStorage.setItem('vocabcam-seen', JSON.stringify(seen)); } catch (e) {}
+    renderSeen();
+  }
+
+  // seen words first, then fill with COMMON
+  function candidates(exclude) {
+    var a = shuffle(Object.keys(seen)).concat(shuffle(COMMON));
+    return a.filter(function (w, i) {
+      return a.indexOf(w) === i && exclude.indexOf(w) < 0;
+    });
+  }
 
   var chIntro = document.getElementById('ch-intro');
   var chPlay  = document.getElementById('ch-play');
@@ -764,7 +798,8 @@
   function startGame() {
     if (!model) return;
     if (!running) return startCamera(startGame);
-    game = { qs: shuffle(POOL).slice(0, ROUND), i: 0, score: 0, log: [] };
+    game = { qs: shuffle(candidates([]).slice(0, ROUND)), i: 0, score: 0, log: [], swaps: SWAPS };
+    document.getElementById('ch-swaps').textContent = SWAPS;
     showPanel(chPlay);
     nextQuestion();
   }
@@ -862,6 +897,15 @@
   document.getElementById('ch-skip').addEventListener('click', function () {
     if (game && !game.busy) finishQuestion(false, 'Skip');
   });
+  document.getElementById('ch-swap').addEventListener('click', function () {
+    if (!game || game.busy || game.swaps <= 0) return;
+    var next = candidates(game.qs)[0];
+    if (!next) return;
+    game.qs[game.i] = next;
+    game.swaps--;
+    document.getElementById('ch-swaps').textContent = game.swaps;
+    nextQuestion();
+  });
   document.getElementById('ch-speak').addEventListener('click', function () {
     if (game) speak(game.qs[game.i]);
   });
@@ -892,6 +936,7 @@
       lastPreds = preds;
       drawResults(preds);
       updateList(preds);
+      if (mode === 'explore') recordSeen(preds);
       checkGame(preds);
     }).catch(function () {
       detecting = false;
