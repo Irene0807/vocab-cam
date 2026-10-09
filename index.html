@@ -265,7 +265,16 @@
     }
 
     /* Controls */
-    #btn-camera { width: 100%; margin-top: 0.75rem; }
+    #btn-camera {
+      position: absolute;
+      top: 0.75rem; right: 0.75rem;
+      z-index: 8;
+      display: flex; align-items: center; gap: 0.35rem;
+      background: rgba(10, 14, 26, 0.75);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+    #btn-camera:hover { background: #7f1d1d; border-color: #ef4444; }
+    #btn-camera[hidden] { display: none; }
     .stat-note { font-size: 0.65rem; color: var(--text-dim); opacity: 0.7; margin-top: 0.15rem; }
     #tap-hint {
       position: absolute;
@@ -473,8 +482,12 @@
     </button>
 
     <div id="flash" aria-live="assertive"></div>
-    <div id="tap-hint" hidden>點框框聽發音</div>
+    <div id="tap-hint" hidden>把鏡頭對準身邊的東西</div>
     <div id="new-word" aria-live="polite"></div>
+    <button class="btn-sub" id="btn-camera" hidden aria-label="關閉鏡頭">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      關閉鏡頭
+    </button>
   </div>
 
   <aside class="panel" role="complementary" aria-label="偵測資訊面板">
@@ -569,11 +582,10 @@
     <div class="card">
       <h2>設定</h2>
       <label for="threshold">
-        信心門檻：<span id="threshold-val">50%</span>
+        信心門檻：<span id="threshold-val">80%</span>
       </label>
-      <input type="range" id="threshold" min="10" max="90" value="50" aria-label="信心門檻">
+      <input type="range" id="threshold" min="10" max="90" value="80" aria-label="信心門檻">
       <p class="model-note" style="margin-top:0.4rem">AI 多確定才框出來。調高 = 比較準但框得少，調低 = 框得多但可能認錯</p>
-      <button class="btn-sub" id="btn-camera" hidden aria-label="關閉鏡頭">關閉鏡頭</button>
     </div>
 
     <div class="card ex">
@@ -729,6 +741,13 @@
     tapHint.hidden = true;
     if (save) try { localStorage.setItem('vocabcam-tapped', '1'); } catch (e) {}
   }
+  function updateTapHint(preds) {
+    if (tapHint.hidden) return;
+    if (!preds.length) { tapHint.textContent = '把鏡頭對準身邊的東西'; return; }
+    var top = preds.reduce(function (a, b) { return b.score > a.score ? b : a; }).class;
+    tapHint.textContent = '點一下畫面上的' + (ZH[top] || top) + '，聽' + (lang === 'ko' ? '韓文' : '英文') + '怎麼念';
+  }
+
   function showTapHint() {
     tapHint.hidden = !(running && mode === 'explore' && !tapped());
   }
@@ -745,7 +764,7 @@
 
   // click on a box: map screen point -> video pixel (object-fit: cover)
   wrap.addEventListener('pointerdown', function (e) {
-    if (!running || startScr.contains(e.target)) return;
+    if (!running || startScr.contains(e.target) || btnCam.contains(e.target)) return;
     var r = wrap.getBoundingClientRect();
     var vw = canvas.width, vh = canvas.height;
     var s = Math.max(r.width / vw, r.height / vh);
@@ -1144,6 +1163,7 @@
       updateList(preds);
       if (mode === 'explore') recordSeen(preds);
       autoWord(preds);
+      updateTapHint(preds);
       checkGame(preds);
     }).catch(function () {
       detecting = false;
